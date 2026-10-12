@@ -1,8 +1,9 @@
 # Incident Reporting API
 
-A small FastAPI service for reporting and retrieving civic incidents (power
-outages, water leaks, theft, etc.). It stores incidents in memory, geocodes the
-reported location with Nominatim, and exposes read/create endpoints.
+A small FastAPI service for reporting, retrieving, and updating civic incidents
+(power outages, water leaks, theft, etc.). It stores incidents in memory,
+geocodes the reported location with Nominatim, and exposes read/create/update
+endpoints.
 
 > **Status:** mock/in-memory backend. There is no database yet — data lives in
 > module-level Python lists and resets whenever the server restarts.
@@ -81,6 +82,7 @@ Base path: `/api/v1`
 | GET | `/incident-tags` | List incident tags |
 | GET | `/submission-data` | List submission metadata |
 | POST | `/incidents/create` | Create an incident (plus its location, categories, tags, and submission metadata) |
+| PUT | `/incidents/update/{incident_id}` | Partially update an incident's mutable fields |
 
 ### `GET /incidents/{incident_id}`
 
@@ -133,12 +135,56 @@ Response:
 }
 ```
 
+### `PUT /incidents/update/{incident_id}`
+
+Partially updates an incident. Only the keys present in the body are applied, so
+it behaves like a partial update.
+
+The following fields are **immutable** and cannot be changed after creation:
+`category`, `categories`, `tags`, `location`.
+
+Status codes:
+
+| Code | When |
+| --- | --- |
+| `200 OK` | Only mutable fields were sent; all applied |
+| `207 Multi-Status` | Mutable **and** immutable fields were sent; mutable fields applied, immutable ones discarded (listed in `ignored_fields`) |
+| `400 Bad Request` | Empty body, or body contained only immutable fields (nothing to update) |
+| `404 Not Found` | No incident with that `incident_id` |
+
+Request body — only include what you want to change:
+
+```json
+{
+  "title": "Theft in Broad Daylight (updated)",
+  "status": "needs review"
+}
+```
+
+Response:
+
+```json
+{
+  "new_incident": { "id": 2, "title": "Theft in Broad Daylight (updated)", "status": "needs review", "...": "..." },
+  "ignored_fields": []
+}
+```
+
+When immutable fields are discarded, `ignored_fields` lists them:
+
+```json
+{
+  "new_incident": { "...": "..." },
+  "ignored_fields": ["category", "location"]
+}
+```
+
 ## Notes & limitations
 
-- **In-memory storage.** The mock stores are module-level lists; new records are
-  appended and persist only for the lifetime of the process. Restarting the
-  server (or `--reload`) resets the data, and multiple workers each keep their
-  own copy. There is no SQL/database layer.
+- **In-memory storage.** The mock stores are module-level lists; created records
+  are appended and updates mutate in place, persisting only for the lifetime of
+  the process. Restarting the server (or `--reload`) resets the data, and
+  multiple workers each keep their own copy. There is no SQL/database layer.
 - `created_at` / `received_at` use naive `datetime.now()` timestamps.
 - Geocoding makes a live network call to Nominatim per create request; failures
   are swallowed and recorded as `geocode_status: "failed"`.
