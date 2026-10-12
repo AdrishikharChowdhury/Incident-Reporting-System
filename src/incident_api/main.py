@@ -2,14 +2,16 @@ from datetime import datetime
 from random import randint
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response, status
 
 from incident_api.data import (
+    IMMUTABLE,
     get_mock_categories,
     get_mock_incident_tags,
     get_mock_incidents,
     get_mock_locations,
     get_mock_submission_metadata,
+    set_mock_incidents,
 )
 from incident_api.utils import create_category, create_tags, lat_long
 
@@ -222,6 +224,36 @@ async def create_incident(body: dict[str, Any], request: Request):
         "metadata": newSubMetadata,
     }
 
-@app.put(f"/incidents/update/{id}")
-def update_incident(body: dict[str,Any]):
-    pass
+
+@app.put("/incidents/update/{incident_id}")
+async def update_incident(incident_id: int, body: dict[str, Any], response: Response):
+    incidents = get_mock_incidents()
+    incident = next((i for i in incidents if i["id"] == incident_id), None)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    if not body:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    ignored = sorted(IMMUTABLE & body.keys())
+    applied = {key: value for key, value in body.items() if key not in IMMUTABLE}
+
+    if not applied:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Immutable Fields",
+                "message": "You cant change these fields, try changing other fields",
+                "fields": ignored,
+            },
+        )
+
+    for key, value in applied.items():
+        incident[key] = value
+
+    set_mock_incidents(incidents)
+
+    if ignored:
+        response.status_code = status.HTTP_207_MULTI_STATUS
+
+    return {"new_incident": incident, "ignored_fields": ignored}

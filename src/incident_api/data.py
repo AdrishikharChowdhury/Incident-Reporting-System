@@ -46,6 +46,8 @@ received_at;
 request_id. Avoid reporter identity unless needed.
 """
 
+IMMUTABLE = {"category", "categories", "tags", "location"}
+
 _CATEGORIES = [
     {
         "id": 1,
@@ -200,3 +202,8 @@ _METADATA = [
 
 def get_mock_submission_metadata():
     return _METADATA
+
+
+def set_mock_incidents(incidents):
+    global _INCIDENTS
+    _INCIDENTS = incidents
