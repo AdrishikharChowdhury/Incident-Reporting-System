@@ -29,3 +29,9 @@ def create_tags(tag):
         "name": tag,
         "tag": "-".join(tag.lower().split(",")),
     }
+
+def delete_fields(arr,target):
+    for idx, item in enumerate(arr):
+        if item["incident_id"] == target:
+            arr.pop(idx)
+    return arr

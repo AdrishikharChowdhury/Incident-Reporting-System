@@ -11,9 +11,13 @@ from incident_api.data import (
     get_mock_incidents,
     get_mock_locations,
     get_mock_submission_metadata,
+    set_mock_categories,
+    set_mock_incident_tags,
     set_mock_incidents,
+    set_mock_locations,
+    set_mock_metadata,
 )
-from incident_api.utils import create_category, create_tags, lat_long
+from incident_api.utils import create_category, create_tags, delete_fields, lat_long
 
 """
 ===========
@@ -257,3 +261,28 @@ async def update_incident(incident_id: int, body: dict[str, Any], response: Resp
         response.status_code = status.HTTP_207_MULTI_STATUS
 
     return {"new_incident": incident, "ignored_fields": ignored}
+
+
+@app.delete("/incidents/{incident_id}")
+async def delete_incident(incident_id: int):
+    incidents = get_mock_incidents()
+    locations = get_mock_locations()
+    categories = get_mock_categories()
+
+    metadata = delete_fields(get_mock_submission_metadata(), incident_id)
+    tags = delete_fields(get_mock_incident_tags(), incident_id)
+
+    for idx, incident in enumerate(incidents):
+        if incident["id"] == incident_id:
+            categories = delete_fields(categories, incident["category_id"])
+            locations = delete_fields(locations, incident["location_id"])
+            incidents.pop(idx)
+            set_mock_categories(categories)
+            set_mock_incident_tags(tags)
+            set_mock_incidents(incidents)
+            set_mock_locations(locations)
+            set_mock_metadata(metadata)
+
+            return Response(status_code=204, content="Incident has been deleted")
+
+    raise HTTPException(status_code=404)
