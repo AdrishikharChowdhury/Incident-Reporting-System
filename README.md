@@ -1,18 +1,21 @@
 # Incident Reporting API
 
-A small FastAPI service for reporting, retrieving, and updating civic incidents
-(power outages, water leaks, theft, etc.). It stores incidents in memory,
-geocodes the reported location with Nominatim, and exposes read/create/update
-endpoints.
+A small FastAPI service for reporting, retrieving, updating, and deleting civic
+incidents (power outages, water leaks, theft, etc.). Data is served from
+in-memory mock stores, while the same mock data is persisted to a local SQLite
+database through SQLModel. Reported locations are geocoded with Nominatim.
 
-> **Status:** mock/in-memory backend. There is no database yet — data lives in
-> module-level Python lists and resets whenever the server restarts.
+> **Status:** in-memory serving with a SQLModel/SQLite layer. The schema lives in
+> `models.py` and the mock data is written to `incident_report.db` on startup via
+> `seed.py`; request handling still reads and writes the module-level stores in
+> `data.py`.
 
 ## Tech stack
 
 - **Python 3.13**
 - **FastAPI** (`fastapi[standard]`)
 - **Uvicorn** (ASGI server)
+- **SQLModel / SQLAlchemy** with **SQLite**
 - **geopy / Nominatim** for geocoding
 - **uv** for dependency management and packaging
 
@@ -25,9 +28,12 @@ incident-api/
 ├── README.md
 └── src/
     └── incident_api/
-        ├── __init__.py       # `main()` entrypoint (runs uvicorn)
-        ├── main.py           # FastAPI app + routes
-        ├── data.py           # in-memory mock stores
+        ├── __init__.py       # engine, session dependency, table creation, `main()` entrypoint
+        ├── main.py           # FastAPI app + routes + lifespan (startup seeding)
+        ├── models.py         # SQLModel tables + Category/Tag models + JSON TypeDecorators
+        ├── enums.py          # `Status` and `GeocodeStatus` enums
+        ├── data.py           # in-memory mock stores + get/set helpers
+        ├── seed.py           # writes the mock data into the database on startup
         └── utils.py          # geocoding + category/tag helpers
 ```
 
@@ -56,17 +62,30 @@ uv run fastapi dev src/incident_api/main.py
 The app serves under the root path **`/api/v1`** at `http://127.0.0.1:8000`.
 Interactive docs: `http://127.0.0.1:8000/api/v1/docs`.
 
+On startup the app creates the SQLite tables (`incident_report.db`) and, if the
+`incident` table is empty, seeds it from the mock data in `data.py`.
+
 ## Data models
 
-| Model | Key fields |
-| --- | --- |
-| `incidents` | `id`, `title`, `sanitized_text`, `category_id` (FK), `location_id` (FK), `occurred_at`, `created_at`, `status`, `duplicate_of_id` (nullable FK) |
-| `locations` | `id`, `incident_id` (FK), `display_name`, `normalized_name`, `latitude`, `longitude`, `geocode_status` |
-| `categories` | `id`, `incident_id` (FK), `categories` — list of `{name, slug}` |
-| `incident_tags` | `id`, `incident_id` (FK), `tags` — list of `{name, tag}` |
-| `submission_metadata` | `id`, `incident_id` (FK), `source`, `received_at`, `request_id` |
+Defined in `models.py` as SQLModel `table=True` classes. Primary keys are UUIDs,
+and every related row carries an `incident_id` foreign key back to
+`incident.id`.
 
-All related rows carry an `incident_id` foreign key back to `incidents.id`.
+| Table | Key fields |
+| --- | --- |
+| `incident` | `id` (UUID), `title`, `sanitized_text`, `categories_id` (FK), `location_id` (FK), `occurred_at`, `created_at`, `status`, `duplicate_of_id` (self-FK, nullable) |
+| `location` | `id` (UUID), `incident_id` (FK), `display_name`, `normalized_name`, `latitude`, `longitude`, `geocode_status` |
+| `categories` | `id` (UUID), `incident_id` (FK), `categories` — JSON list of `{name, slug}` |
+| `tags` | `id` (UUID), `incident_id` (FK), `tags` — JSON list of `{name, tag}` |
+| `metadata` | `id` (UUID), `incident_id` (FK), `source`, `received_at`, `request_id` |
+
+The `Category` and `Tag` value models are stored in JSON columns through the
+`CategoryList` / `TagList` `TypeDecorator`s.
+
+Enums (`enums.py`):
+
+- `Status`: `pending`, `in progress`, `resolved`, `duplicate`, `closed`, `rejected`
+- `GeocodeStatus`: `success`, `failed`
 
 ## API endpoints
 
@@ -83,6 +102,7 @@ Base path: `/api/v1`
 | GET | `/submission-data` | List submission metadata |
 | POST | `/incidents/create` | Create an incident (plus its location, categories, tags, and submission metadata) |
 | PUT | `/incidents/update/{incident_id}` | Partially update an incident's mutable fields |
+| DELETE | `/incidents/{incident_id}` | Delete an incident and its related records |
 
 ### `GET /incidents/{incident_id}`
 
@@ -179,12 +199,23 @@ When immutable fields are discarded, `ignored_fields` lists them:
 }
 ```
 
+### `DELETE /incidents/{incident_id}`
+
+Removes the incident together with its related location, categories, tags, and
+submission metadata.
+
+- `204 No Content` — the incident was deleted.
+- `404 Not Found` — no incident with that `incident_id`.
+
 ## Notes & limitations
 
-- **In-memory storage.** The mock stores are module-level lists; created records
-  are appended and updates mutate in place, persisting only for the lifetime of
-  the process. Restarting the server (or `--reload`) resets the data, and
-  multiple workers each keep their own copy. There is no SQL/database layer.
-- `created_at` / `received_at` use naive `datetime.now()` timestamps.
+- **In-memory serving.** Request handlers still operate on the module-level lists
+  in `data.py`; created records are appended and updates mutate in place,
+  persisting only for the lifetime of the process. Restarting the server (or
+  `--reload`) resets the in-memory data.
+- **SQLite layer.** `models.py` defines the SQLModel schema and `seed.py` writes
+  the mock data into `incident_report.db` on startup. The handlers are not yet
+  reading from this database — migrating them is pending.
+- `created_at` / `received_at` use `datetime.now(...)` timestamps.
 - Geocoding makes a live network call to Nominatim per create request; failures
   are swallowed and recorded as `geocode_status: "failed"`.
