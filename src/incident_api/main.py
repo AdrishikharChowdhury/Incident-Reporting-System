@@ -4,7 +4,7 @@ from random import randint
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
-from sqlalchemy.orm.session import Session
+from sqlmodel import Session
 
 from incident_api import create_db_and_tables, engine
 from incident_api.data import (
@@ -20,14 +20,15 @@ from incident_api.data import (
     set_mock_locations,
     set_mock_metadata,
 )
+from incident_api.seed import seed
 from incident_api.utils import create_category, create_tags, delete_fields, lat_long
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
-    # with Session(engine) as session:
-    #     if not session
+    with Session(engine) as session:
+        seed(session)
 
     yield
 

@@ -1,247 +1,227 @@
 """
-===========
-incidents
-===========
-id — PK;
-title;
-sanitized_text;
-category_id — FK → categories.id;
-location_id — FK → locations.id;
-occurred_at;
-created_at;
-status;
-duplicate_of_id — nullable FK → incidents.id
+Mock data shaped to the SQLModel models.
 
-===========
-locations
-===========
-id — PK;
-display_name;
-normalized_name;
-latitude;
-longitude;
-geocode_status
-
-============
-categories
-============
-id — PK;
-name;
-slug
-
-===============
-incident_tags
-===============
-id — PK;
-incident_id — FK → incidents.id;
-tags — list of {name, tag}
-
-=====================
-submission_metadata
-=====================
-submission_id — PK;
-incident_id — FK → incidents.id;
-source;
-received_at;
-request_id. Avoid reporter identity unless needed.
+Ids are deterministic UUIDs (uuid5) so foreign keys can reference each other
+across the modules. Each dict's keys match the corresponding model's fields, so
+`Model(**row)` builds the row directly.
 """
 
+from datetime import datetime, timezone
+from uuid import NAMESPACE_DNS, uuid5
+
+from incident_api.enums import GeocodeStatus, Status
+
+
+def _uid(name: str):
+    return uuid5(NAMESPACE_DNS, name)
+
+
 IMMUTABLE = {"category", "categories", "tags", "location"}
+
 _CATEGORIES = [
     {
-        "id": 1,
-        "incident_id": 2,
+        "id": _uid("category-1"),
+        "incident_id": _uid("incident-2"),
         "categories": [{"name": "Municipal Services", "slug": "municipal-services"}],
     },
     {
-        "id": 2,
-        "incident_id": 4,
+        "id": _uid("category-2"),
+        "incident_id": _uid("incident-4"),
         "categories": [{"name": "Public Safety", "slug": "public-safety"}],
     },
     {
-        "id": 3,
-        "incident_id": 1,
+        "id": _uid("category-3"),
+        "incident_id": _uid("incident-1"),
         "categories": [
             {"name": "Utility / Infrastructure", "slug": "utility-infrastructure"}
         ],
     },
     {
-        "id": 4,
-        "incident_id": 3,
+        "id": _uid("category-4"),
+        "incident_id": _uid("incident-3"),
         "categories": [
             {"name": "Utility / Infrastructure", "slug": "utility-infrastructure"}
         ],
     },
     {
-        "id": 5,
-        "incident_id": 5,
+        "id": _uid("category-5"),
+        "incident_id": _uid("incident-5"),
         "categories": [{"name": "Sanitation & Waste", "slug": "sanitation-waste"}],
     },
 ]
+
 _LOCATIONS = [
     {
-        "id": 5,
-        "incident_id": 2,
+        "id": _uid("location-2"),
+        "incident_id": _uid("incident-2"),
         "display_name": "Park Street, Kolkata",
         "normalized_name": "park-street-kolkata",
         "latitude": 22.5551,
         "longitude": 88.3517,
-        "geocode_status": "success",
+        "geocode_status": GeocodeStatus.SUCCESS,
     },
     {
-        "id": 12,
-        "incident_id": 1,
+        "id": _uid("location-1"),
+        "incident_id": _uid("incident-1"),
         "display_name": "Sector V, Salt Lake, Kolkata",
         "normalized_name": "sector-v-salt-lake-kolkata",
         "latitude": 22.5726,
         "longitude": 88.4372,
-        "geocode_status": "success",
+        "geocode_status": GeocodeStatus.SUCCESS,
     },
     {
-        "id": 13,
-        "incident_id": 3,
+        "id": _uid("location-3"),
+        "incident_id": _uid("incident-3"),
         "display_name": "Sector V, Salt Lake, Kolkata",
         "normalized_name": "sector-v-salt-lake-kolkata",
         "latitude": 22.5726,
         "longitude": 88.4372,
-        "geocode_status": "success",
+        "geocode_status": GeocodeStatus.SUCCESS,
     },
     {
-        "id": 21,
-        "incident_id": 4,
+        "id": _uid("location-4"),
+        "incident_id": _uid("incident-4"),
         "display_name": "Howrah Bridge, Kolkata",
         "normalized_name": "howrah-bridge-kolkata",
         "latitude": 22.5851,
         "longitude": 88.3468,
-        "geocode_status": "success",
+        "geocode_status": GeocodeStatus.SUCCESS,
     },
     {
-        "id": 22,
-        "incident_id": 5,
+        "id": _uid("location-5"),
+        "incident_id": _uid("incident-5"),
         "display_name": "Salt Lake Sector II, Kolkata",
         "normalized_name": "salt-lake-sector-ii-kolkata",
         "latitude": 22.58,
         "longitude": 88.41,
-        "geocode_status": "success",
+        "geocode_status": GeocodeStatus.SUCCESS,
     },
 ]
+
 _INCIDENTS = [
     {
-        "id": 1,
+        "id": _uid("incident-1"),
         "title": "Power Outage in Sector V",
         "sanitized_text": "Sudden grid failure affecting commercial blocks.",
-        "category_id": 3,
-        "location_id": 12,
-        "occurred_at": "2026-10-11T08:30:00Z",
-        "created_at": "2026-10-11T08:35:00Z",
-        "status": "pending",
+        "categories_id": _uid("category-3"),
+        "location_id": _uid("location-1"),
+        "occurred_at": datetime(2026, 10, 11, 8, 30, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 11, 8, 35, tzinfo=timezone.utc),
+        "status": Status.PENDING,
         "duplicate_of_id": None,
     },
     {
-        "id": 2,
+        "id": _uid("incident-2"),
         "title": "Water Pipeline Leakage",
         "sanitized_text": "Main supply pipe rupture near the main intersection.",
-        "category_id": 1,
-        "location_id": 5,
-        "occurred_at": "2026-10-11T07:10:00Z",
-        "created_at": "2026-10-11T07:20:00Z",
-        "status": "needs review",
+        "categories_id": _uid("category-1"),
+        "location_id": _uid("location-2"),
+        "occurred_at": datetime(2026, 10, 11, 7, 10, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 11, 7, 20, tzinfo=timezone.utc),
+        "status": Status.PENDING,
         "duplicate_of_id": None,
     },
     {
-        "id": 3,
+        "id": _uid("incident-3"),
         "title": "Duplicate Power Outage Report",
         "sanitized_text": "Power failure reported again in Sector V block B.",
-        "category_id": 4,
-        "location_id": 13,
-        "occurred_at": "2026-10-11T08:32:00Z",
-        "created_at": "2026-10-11T08:40:00Z",
-        "status": "closed",
-        "duplicate_of_id": 1,
+        "categories_id": _uid("category-4"),
+        "location_id": _uid("location-3"),
+        "occurred_at": datetime(2026, 10, 11, 8, 32, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 11, 8, 40, tzinfo=timezone.utc),
+        "status": Status.CLOSED,
+        "duplicate_of_id": _uid("incident-1"),
     },
     {
-        "id": 4,
+        "id": _uid("incident-4"),
         "title": "Assault Near Howrah Bridge",
         "sanitized_text": "A late-night altercation escalated into an assault near the bridge approach.",
-        "category_id": 2,
-        "location_id": 21,
-        "occurred_at": "2026-10-12T22:15:00Z",
-        "created_at": "2026-10-12T22:30:00Z",
-        "status": "pending",
+        "categories_id": _uid("category-2"),
+        "location_id": _uid("location-4"),
+        "occurred_at": datetime(2026, 10, 12, 22, 15, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 12, 22, 30, tzinfo=timezone.utc),
+        "status": Status.PENDING,
         "duplicate_of_id": None,
     },
     {
-        "id": 5,
+        "id": _uid("incident-5"),
         "title": "Illegal Dumping Behind Market",
         "sanitized_text": "Construction debris and household waste dumped behind the market complex.",
-        "category_id": 5,
-        "location_id": 22,
-        "occurred_at": "2026-10-12T09:05:00Z",
-        "created_at": "2026-10-12T09:20:00Z",
-        "status": "needs review",
+        "categories_id": _uid("category-5"),
+        "location_id": _uid("location-5"),
+        "occurred_at": datetime(2026, 10, 12, 9, 5, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 12, 9, 20, tzinfo=timezone.utc),
+        "status": Status.PENDING,
         "duplicate_of_id": None,
     },
 ]
+
 _TAGS = [
     {
-        "id": 34,
-        "incident_id": 1,
+        "id": _uid("tags-1"),
+        "incident_id": _uid("incident-1"),
         "tags": [{"name": "Power Outage", "tag": "power-outage"}],
     },
     {
-        "id": 43,
-        "incident_id": 2,
-        "tags": [{"name": "Grid Failure", "tag": "grid-failure"}],
+        "id": _uid("tags-2"),
+        "incident_id": _uid("incident-2"),
+        "tags": [{"name": "Water Leak", "tag": "water-leak"}],
     },
-    {"id": 56, "incident_id": 3, "tags": [{"name": "Water Leak", "tag": "water-leak"}]},
     {
-        "id": 67,
-        "incident_id": 4,
+        "id": _uid("tags-3"),
+        "incident_id": _uid("incident-3"),
+        "tags": [{"name": "Duplicate Report", "tag": "duplicate-report"}],
+    },
+    {
+        "id": _uid("tags-4"),
+        "incident_id": _uid("incident-4"),
         "tags": [{"name": "Assault", "tag": "assault"}],
     },
     {
-        "id": 78,
-        "incident_id": 5,
+        "id": _uid("tags-5"),
+        "incident_id": _uid("incident-5"),
         "tags": [{"name": "Illegal Dumping", "tag": "illegal-dumping"}],
     },
 ]
+
 _METADATA = [
     {
-        "id": 101,
-        "incident_id": 1,
+        "id": _uid("metadata-1"),
+        "incident_id": _uid("incident-1"),
         "source": "mobile_app",
-        "received_at": "2026-10-11T08:34:00Z",
-        "request_id": "req_uuid_88192a",
+        "received_at": datetime(2026, 10, 11, 8, 34, tzinfo=timezone.utc),
+        "request_id": _uid("request-1"),
     },
     {
-        "id": 102,
-        "incident_id": 2,
+        "id": _uid("metadata-2"),
+        "incident_id": _uid("incident-2"),
         "source": "web_portal",
-        "received_at": "2026-10-11T07:19:00Z",
-        "request_id": "req_uuid_44109b",
+        "received_at": datetime(2026, 10, 11, 7, 19, tzinfo=timezone.utc),
+        "request_id": _uid("request-2"),
     },
     {
-        "id": 103,
-        "incident_id": 3,
+        "id": _uid("metadata-3"),
+        "incident_id": _uid("incident-3"),
         "source": "mobile_app",
-        "received_at": "2026-10-11T08:39:00Z",
-        "request_id": "req_uuid_99211c",
+        "received_at": datetime(2026, 10, 11, 8, 39, tzinfo=timezone.utc),
+        "request_id": _uid("request-3"),
     },
     {
-        "id": 104,
-        "incident_id": 4,
+        "id": _uid("metadata-4"),
+        "incident_id": _uid("incident-4"),
         "source": "web_portal",
-        "received_at": "2026-10-12T22:29:00Z",
-        "request_id": "req_uuid_77410d",
+        "received_at": datetime(2026, 10, 12, 22, 29, tzinfo=timezone.utc),
+        "request_id": _uid("request-4"),
     },
     {
-        "id": 105,
-        "incident_id": 5,
+        "id": _uid("metadata-5"),
+        "incident_id": _uid("incident-5"),
         "source": "mobile_app",
-        "received_at": "2026-10-12T09:18:00Z",
-        "request_id": "req_uuid_55237e",
+        "received_at": datetime(2026, 10, 12, 9, 18, tzinfo=timezone.utc),
+        "request_id": _uid("request-5"),
     },
 ]
+
 
 def get_mock_categories():
     return _CATEGORIES

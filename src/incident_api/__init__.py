@@ -2,8 +2,7 @@ import uvicorn
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.orm.session import Session
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 sqlite_file_name = "incident_report.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
