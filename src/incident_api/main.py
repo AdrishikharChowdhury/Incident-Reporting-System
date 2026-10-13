@@ -1,9 +1,12 @@
+from contextlib import asynccontextmanager
 from datetime import datetime
 from random import randint
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
+from sqlalchemy.orm.session import Session
 
+from incident_api import create_db_and_tables, engine
 from incident_api.data import (
     IMMUTABLE,
     get_mock_categories,
@@ -19,55 +22,17 @@ from incident_api.data import (
 )
 from incident_api.utils import create_category, create_tags, delete_fields, lat_long
 
-"""
-===========
-incidents
-===========
-id — PK;
-title;
-sanitized_text;
-category_id — FK → categories.id;
-location_id — FK → locations.id;
-occurred_at;
-created_at;
-status;
-duplicate_of_id — nullable FK → incidents.id
 
-===========
-locations
-===========
-id — PK;
-display_name;
-normalized_name;
-latitude;
-longitude;
-geocode_status
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_db_and_tables()
+    # with Session(engine) as session:
+    #     if not session
 
-============
-categories
-============
-id — PK;
-name;
-slug
+    yield
 
-===============
-incident_tags
-===============
-incident_id — PK, FK → incidents.id;
-tag — part of composite PK;
-together, (incident_id, tag) form the composite primary key
 
-=====================
-submission_metadata
-=====================
-submission_id — PK;
-incident_id — FK → incidents.id;
-source;
-received_at;
-request_id. Avoid reporter identity unless needed.
-"""
-
-app = FastAPI(root_path="/api/v1")
+app = FastAPI(root_path="/api/v1", lifespan=lifespan)
 
 
 @app.get("/")

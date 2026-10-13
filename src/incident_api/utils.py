@@ -1,14 +1,32 @@
 from typing import Optional, cast
 
 from geopy.geocoders import Nominatim
-from geopy.location import Location
+from geopy.location import Location as Loc
+
+from incident_api.models import GeocodeStatus, Location
 
 
-def lat_long(my_location: str):
+def build_location(display_name: str, incident_id=None) -> Location:
+    lat, lon = lat_long(display_name)
+    return Location(
+        incident_id=incident_id,
+        display_name=display_name,
+        normalized_name="-".join(
+            part.strip() for part in display_name.lower().split(",")
+        ),
+        latitude=lat,
+        longitude=lon,
+        geocode_status=(
+            GeocodeStatus.SUCCESS if lat is not None else GeocodeStatus.FAILED
+        ),
+    )
+
+
+def lat_long(my_location: str) -> tuple[float | None, float | None]:
     geolocator = Nominatim(user_agent="incident-api")
 
     try:
-        location = cast(Optional[Location], geolocator.geocode(my_location))
+        location = cast(Optional[Loc], geolocator.geocode(my_location))
     except Exception:
         return None, None
 
@@ -30,7 +48,8 @@ def create_tags(tag):
         "tag": "-".join(tag.lower().split(",")),
     }
 
-def delete_fields(arr,target):
+
+def delete_fields(arr, target):
     for idx, item in enumerate(arr):
         if item["incident_id"] == target:
             arr.pop(idx)
