@@ -134,3 +134,7 @@ class IncidentCreate(SQLModel):
 class IncidentUpdate(SQLModel):
     title: str
     text: str
+
+
+class StatusUpdate(SQLModel):
+    status: Status

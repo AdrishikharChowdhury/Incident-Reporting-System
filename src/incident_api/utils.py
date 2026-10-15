@@ -3,6 +3,7 @@ from typing import Optional, cast
 from geopy.geocoders import Nominatim
 from geopy.location import Location as Loc
 
+from incident_api.enums import Status
 from incident_api.models import Category, GeocodeStatus, Location, Tag
 
 
@@ -40,7 +41,7 @@ def create_category(category: str) -> Category:
 
 
 def create_tags(tag: str) -> Tag:
-    return Tag(name=tag, tag="-".join(tag.lower().split()))  
+    return Tag(name=tag, tag="-".join(tag.lower().split()))
 
 
 def delete_fields(arr, target):
@@ -48,3 +49,21 @@ def delete_fields(arr, target):
         if item["incident_id"] == target:
             arr.pop(idx)
     return arr
+
+
+def update_status(status) -> Status | None:
+    match status:
+        case "pending":
+            return Status.PENDING
+        case "in progress":
+            return Status.IN_PROGRESS
+        case "resolved":
+            return Status.RESOLVED
+        case "duplicate":
+            return Status.DUPLICATE
+        case "closed":
+            return Status.CLOSED
+        case "rejected":
+            return Status.REJECTED
+        case _:
+            return None

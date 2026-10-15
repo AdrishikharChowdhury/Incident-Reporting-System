@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from sqlmodel import Session, select
 
 from incident_api import SessionDep, create_db_and_tables, engine
+from incident_api.enums import Status
 from incident_api.models import (
     Categories,
     Incident,
@@ -12,6 +13,7 @@ from incident_api.models import (
     IncidentUpdate,
     Location,
     Metadata,
+    StatusUpdate,
     Tags,
 )
 from incident_api.response_model import (
@@ -19,7 +21,12 @@ from incident_api.response_model import (
     Response,
 )
 from incident_api.seed import seed
-from incident_api.utils import build_location, create_category, create_tags
+from incident_api.utils import (
+    build_location,
+    create_category,
+    create_tags,
+    update_status,
+)
 
 
 @asynccontextmanager
@@ -203,3 +210,28 @@ async def delete_incident(incident_id: UUID, session: SessionDep):
     session.delete(tags)
     session.delete(metadata)
     session.commit()
+
+
+@app.put(
+    "/incidents/status/{incident_id}",
+    status_code=202,
+    response_model=Response[Incident],
+)
+async def status_update(incident_id: UUID, session: SessionDep, body: StatusUpdate):
+    incident = session.get(Incident, incident_id)
+
+    if not incident:
+        raise HTTPException(status_code=404)
+
+    status = update_status(body.status)
+
+    if status is None:
+        raise HTTPException(status_code=400)
+
+    incident.status = status
+
+    session.add(incident)
+    session.commit()
+    session.refresh(incident)
+
+    return {"data": incident}
