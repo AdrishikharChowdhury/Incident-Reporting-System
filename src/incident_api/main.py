@@ -4,7 +4,7 @@ from random import randint
 from typing import Any
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi import FastAPI, HTTPException, Request, status
 from sqlmodel import Session, select
 
 from incident_api import SessionDep, create_db_and_tables, engine
@@ -23,12 +23,8 @@ from incident_api.data import (
 )
 from incident_api.models import Categories, Incident, Location, Metadata, Tags
 from incident_api.response_model import (
-    CategoriesResponse,
     IncidentResponse,
-    IncidentsResponse,
-    LocationsResponse,
-    MetadataResponse,
-    TagsResponse,
+    Response,
 )
 from incident_api.seed import seed
 from incident_api.utils import create_category, create_tags, delete_fields, lat_long
@@ -51,37 +47,37 @@ async def root():
     return {"message": "Hello welcome to the incident-reporting-api"}
 
 
-@app.get("/incidents", response_model=IncidentsResponse)
+@app.get("/incidents", response_model=Response[list[Incident]])
 async def read_incidents(session: SessionDep):
     incidents = session.exec(select(Incident)).all()
     return {"incidents": incidents}
 
 
-@app.get("/categories", response_model=CategoriesResponse)
+@app.get("/categories", response_model=Response[list[Categories]])
 async def read_categories(session: SessionDep):
     categories = session.exec(select(Categories)).all()
     return {"categories": categories}
 
 
-@app.get("/locations", response_model=LocationsResponse)
+@app.get("/locations", response_model=Response[list[Location]])
 async def read_locations(session: SessionDep):
     locations = session.exec(select(Location)).all()
     return {"locations": locations}
 
 
-@app.get("/incident-tags", response_model=TagsResponse)
+@app.get("/incident-tags", response_model=Response[list[Tags]])
 async def read_incident_tags(session: SessionDep):
     incident_tags = session.exec(select(Tags)).all()
     return {"incident_tags": incident_tags}
 
 
-@app.get("/submission-data", response_model=MetadataResponse)
+@app.get("/submission-data", response_model=Response[list[Metadata]])
 async def read_submission_data(session: SessionDep):
     metadata = session.exec(select(Metadata)).all()
     return {"submission-data": metadata}
 
 
-@app.get("/incidents/{incident_id}",response_model=IncidentResponse)
+@app.get("/incidents/{incident_id}", response_model=IncidentResponse)
 async def read_a_incident(incident_id: UUID, session: SessionDep):
     incident = session.get(Incident, incident_id)
 
