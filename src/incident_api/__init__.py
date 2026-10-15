@@ -1,6 +1,6 @@
-import uvicorn
 from typing import Annotated
 
+import uvicorn
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -16,7 +16,7 @@ def create_db_and_tables():
 
 
 def get_session():
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         yield session
 
 

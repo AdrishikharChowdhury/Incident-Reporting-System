@@ -3,7 +3,7 @@ from typing import Optional, cast
 from geopy.geocoders import Nominatim
 from geopy.location import Location as Loc
 
-from incident_api.models import GeocodeStatus, Location
+from incident_api.models import Category, GeocodeStatus, Location, Tag
 
 
 def build_location(display_name: str, incident_id=None) -> Location:
@@ -35,18 +35,12 @@ def lat_long(my_location: str) -> tuple[float | None, float | None]:
     return None, None
 
 
-def create_category(category):
-    return {
-        "name": category,
-        "slug": "-".join(category.lower().split()),
-    }
+def create_category(category: str) -> Category:
+    return Category(name=category, slug="-".join(category.lower().split()))
 
 
-def create_tags(tag):
-    return {
-        "name": tag,
-        "tag": "-".join(tag.lower().split(",")),
-    }
+def create_tags(tag: str) -> Tag:
+    return Tag(name=tag, tag="-".join(tag.lower().split()))  
 
 
 def delete_fields(arr, target):

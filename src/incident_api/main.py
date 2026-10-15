@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from random import randint
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlmodel import Session, select
@@ -21,13 +21,26 @@ from incident_api.data import (
     set_mock_locations,
     set_mock_metadata,
 )
-from incident_api.models import Categories, Incident, Location, Metadata, Tags
+from incident_api.models import (
+    Categories,
+    Incident,
+    IncidentCreate,
+    IncidentUpdate,
+    Location,
+    Metadata,
+    Tags,
+)
 from incident_api.response_model import (
     IncidentResponse,
     Response,
 )
 from incident_api.seed import seed
-from incident_api.utils import create_category, create_tags, delete_fields, lat_long
+from incident_api.utils import (
+    build_location,
+    create_category,
+    create_tags,
+    delete_fields,
+)
 
 
 @asynccontextmanager
@@ -50,34 +63,37 @@ async def root():
 @app.get("/incidents", response_model=Response[list[Incident]])
 async def read_incidents(session: SessionDep):
     incidents = session.exec(select(Incident)).all()
-    return {"incidents": incidents}
+    return {"data": incidents}
 
 
 @app.get("/categories", response_model=Response[list[Categories]])
 async def read_categories(session: SessionDep):
     categories = session.exec(select(Categories)).all()
-    return {"categories": categories}
+    return {"data": categories}
 
 
 @app.get("/locations", response_model=Response[list[Location]])
 async def read_locations(session: SessionDep):
     locations = session.exec(select(Location)).all()
-    return {"locations": locations}
+    return {"data": locations}
 
 
 @app.get("/incident-tags", response_model=Response[list[Tags]])
 async def read_incident_tags(session: SessionDep):
     incident_tags = session.exec(select(Tags)).all()
-    return {"incident_tags": incident_tags}
+    return {"data": incident_tags}
 
 
 @app.get("/submission-data", response_model=Response[list[Metadata]])
 async def read_submission_data(session: SessionDep):
     metadata = session.exec(select(Metadata)).all()
-    return {"submission-data": metadata}
+    return {"data": metadata}
 
 
-@app.get("/incidents/{incident_id}", response_model=IncidentResponse)
+@app.get(
+    "/incidents/{incident_id}",
+    response_model=IncidentResponse[Incident, Categories, Location, Tags, Metadata],
+)
 async def read_a_incident(incident_id: UUID, session: SessionDep):
     incident = session.get(Incident, incident_id)
 
@@ -99,118 +115,95 @@ async def read_a_incident(incident_id: UUID, session: SessionDep):
     }
 
 
-@app.post("/incidents/create")
-async def create_incident(body: dict[str, Any], request: Request):
+@app.post(
+    "/incidents/create",
+    response_model=IncidentResponse[Incident, Categories, Location, Tags, Metadata],
+)
+async def create_incident(body: IncidentCreate, request: Request, session: SessionDep):
 
-    newTagId = randint(100, 1000)
-    newLocationId = randint(100, 1000)
-    locationName = body.get("location") or ""
-    locationLat, locationLong = lat_long(locationName)
-    newCategoryId = randint(100, 1000)
-    newSubId = randint(100, 1000)
-    newId = randint(100, 1000)
-    rawCategories = body.get("categories") or ""
+    newId = uuid4()
+    rawTags = body.tags or ""
+    cleaned_tags = (
+        [t.strip() for t in rawTags.split(",") if t.strip()] if rawTags else []
+    )
+    newTags = Tags(tags=[create_tags(c) for c in cleaned_tags], incident_id=newId)
+
+    locationName = body.location or ""
+    newLocation = build_location(locationName, newId)
+
+    rawCategories = body.categories or ""
     category_list = (
         [cat.strip() for cat in rawCategories.split(",")] if rawCategories else []
     )
-    rawTags = body.get("tags") or ""
-    cleaned_tags = rawTags.strip().split(",") if rawTags else []
+    newCategories = Categories(
+        incident_id=newId, categories=[create_category(c) for c in category_list]
+    )
 
-    newTags = {
-        "id": newTagId,
-        "incident_id": newId,
-        "tags": list(map(create_tags, cleaned_tags)) if cleaned_tags else [],
-    }
+    category_id = newCategories.id
+    location_id = newLocation.id
+    newIncident = Incident(
+        id=newId,
+        title=body.title,
+        sanitized_text=body.text,
+        categories_id=category_id,
+        location_id=location_id,
+        occurred_at=body.occurred_at,
+    )
 
-    newLocation = {
-        "id": newLocationId,
-        "incident_id": newId,
-        "display_name": locationName,
-        "normalized_name": "-".join(
-            part.strip() for part in locationName.lower().split(",")
-        ),
-        "latitude": locationLat,
-        "longitude": locationLong,
-        "geocode_status": "failed"
-        if locationLat is None and locationLong is None
-        else "success",
-    }
+    newSubMetadata = Metadata(
+        incident_id=newId,
+        source=request.headers.get("user-agent") or "",
+        request_id=uuid4(),
+    )
 
-    newCategories = {
-        "id": newCategoryId,
-        "incident_id": newId,
-        "categories": list(map(create_category, category_list))
-        if category_list
-        else [],
-    }
-
-    newIncident = {
-        "id": newId,
-        "title": body.get("title"),
-        "sanitized_text": body.get("text"),
-        "category_id": newCategoryId,
-        "location_id": newLocationId,
-        "occurred_at": body.get("occurred_at"),
-        "created_at": datetime.now(),
-        "status": "pending",
-        "duplicate_of_id": None,
-    }
-
-    newSubMetadata = {
-        "id": newSubId,
-        "incident_id": newId,
-        "source": request.headers.get("user-agent"),
-        "received_at": datetime.now(),
-        "request_id": f"req_uuid_{randint(100, 10000)}c",
-    }
-
-    get_mock_categories().append(newCategories)
-    get_mock_incidents().append(newIncident)
-    get_mock_locations().append(newLocation)
-    get_mock_incident_tags().append(newTags)
-    get_mock_submission_metadata().append(newSubMetadata)
+    session.add(newTags)
+    session.add(newLocation)
+    session.add(newCategories)
+    session.add(newIncident)
+    session.add(newSubMetadata)
+    session.commit()
 
     return {
         "incident": newIncident,
+        "category": newCategories,
         "location": newLocation,
-        "categories": newCategories,
-        "incident_tags": newTags,
+        "tags": newTags,
         "metadata": newSubMetadata,
     }
 
 
-@app.put("/incidents/update/{incident_id}")
-async def update_incident(incident_id: int, body: dict[str, Any], response: Response):
-    incidents = get_mock_incidents()
-    incident = next((i for i in incidents if i["id"] == incident_id), None)
+@app.put(
+    "/incidents/update/{incident_id}",
+    response_model=IncidentResponse[Incident, Categories, Location, Tags, Metadata],
+)
+async def update_incident(
+    incident_id: UUID, body: IncidentUpdate, session: SessionDep
+):
+    incident = session.get(Incident, incident_id)
+
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    if not body:
-        raise HTTPException(status_code=400, detail="Nothing to update")
+    category = session.get(Categories, incident.categories_id)
+    location = session.get(Location, incident.location_id)
+    tags = session.exec(select(Tags).where(Tags.incident_id == incident.id)).first()
+    metadata = session.exec(
+        select(Metadata).where(Metadata.incident_id == incident.id)
+    ).first()
 
-    ignored = sorted(IMMUTABLE & body.keys())
-    applied = {key: value for key, value in body.items() if key not in IMMUTABLE}
+    incident.title = body.title
+    incident.sanitized_text = body.text
+    session.add(incident)
+    session.commit()
+    session.refresh(incident)
 
-    if not applied:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "Immutable Fields",
-                "message": "You cant change these fields, try changing other fields",
-                "fields": ignored,
-            },
-        )
-
-    for key, value in applied.items():
-        incident[key] = value
-
-    set_mock_incidents(incidents)
-
-    if ignored:
-        response.status_code = status.HTTP_207_MULTI_STATUS
-
-    return {"new_incident": incident, "ignored_fields": ignored}
+    return {
+        "incident": incident,
+        "category": category,
+        "location": location,
+        "tags": tags,
+        "metadata": metadata,
+    }
 
 
 @app.delete("/incidents/{incident_id}")

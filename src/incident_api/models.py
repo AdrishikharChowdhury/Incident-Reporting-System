@@ -120,3 +120,17 @@ class Metadata(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc), index=True
     )
     request_id: UUID | None = Field(default_factory=uuid4)
+
+
+class IncidentCreate(SQLModel):
+    title: str
+    text: str
+    location: str
+    categories: str | None = None
+    tags: str | None = None
+    occurred_at: datetime | None = None
+
+
+class IncidentUpdate(SQLModel):
+    title: str
+    text: str
