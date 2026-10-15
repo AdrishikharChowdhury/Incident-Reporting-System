@@ -206,26 +206,23 @@ async def update_incident(
     }
 
 
-@app.delete("/incidents/{incident_id}")
-async def delete_incident(incident_id: int):
-    incidents = get_mock_incidents()
-    locations = get_mock_locations()
-    categories = get_mock_categories()
+@app.delete("/incidents/{incident_id}",status_code=204)
+async def delete_incident(incident_id: UUID,session:SessionDep):
+    incident = session.get(Incident, incident_id)
 
-    metadata = delete_fields(get_mock_submission_metadata(), incident_id)
-    tags = delete_fields(get_mock_incident_tags(), incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
 
-    for idx, incident in enumerate(incidents):
-        if incident["id"] == incident_id:
-            categories = delete_fields(categories, incident["category_id"])
-            locations = delete_fields(locations, incident["location_id"])
-            incidents.pop(idx)
-            set_mock_categories(categories)
-            set_mock_incident_tags(tags)
-            set_mock_incidents(incidents)
-            set_mock_locations(locations)
-            set_mock_metadata(metadata)
+    category = session.get(Categories, incident.categories_id)
+    location = session.get(Location, incident.location_id)
+    tags = session.exec(select(Tags).where(Tags.incident_id == incident.id)).first()
+    metadata = session.exec(
+        select(Metadata).where(Metadata.incident_id == incident.id)
+    ).first()
 
-            return Response(status_code=204, content="Incident has been deleted")
-
-    raise HTTPException(status_code=404)
+    session.delete(incident)
+    session.delete(category)
+    session.delete(location)
+    session.delete(tags)
+    session.delete(metadata)
+    session.commit()
