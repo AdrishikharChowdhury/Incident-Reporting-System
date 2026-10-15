@@ -1,14 +1,15 @@
 # Incident Reporting API
 
 A small FastAPI service for reporting, retrieving, updating, and deleting civic
-incidents (power outages, water leaks, theft, etc.). Data is served from
-in-memory mock stores, while the same mock data is persisted to a local SQLite
-database through SQLModel. Reported locations are geocoded with Nominatim.
+incidents (power outages, water leaks, theft, etc.). Data is stored in a local
+SQLite database through SQLModel; on first startup the tables are created and
+seeded from the mock data in `data.py`. Reported locations are geocoded with
+Nominatim.
 
-> **Status:** in-memory serving with a SQLModel/SQLite layer. The schema lives in
-> `models.py` and the mock data is written to `incident_report.db` on startup via
-> `seed.py`; request handling still reads and writes the module-level stores in
-> `data.py`.
+> **Status:** SQLite-backed. All read and write handlers (list, get-one, create,
+> update) now query and mutate the database through SQLModel. The `DELETE`
+> handler still operates on the module-level mock stores in `data.py`; migrating
+> it is pending.
 
 ## Tech stack
 
@@ -30,11 +31,12 @@ incident-api/
     └── incident_api/
         ├── __init__.py       # engine, session dependency, table creation, `main()` entrypoint
         ├── main.py           # FastAPI app + routes + lifespan (startup seeding)
-        ├── models.py         # SQLModel tables + Category/Tag models + JSON TypeDecorators
+        ├── models.py         # SQLModel tables + Category/Tag models + request models + JSON TypeDecorators
         ├── enums.py          # `Status` and `GeocodeStatus` enums
-        ├── data.py           # in-memory mock stores + get/set helpers
+        ├── response_model.py # generic `Response` / `IncidentResponse` response models
+        ├── data.py           # in-memory mock stores (seed source) + get/set helpers
         ├── seed.py           # writes the mock data into the database on startup
-        └── utils.py          # geocoding + category/tag helpers
+        └── utils.py          # geocoding + category/tag builders
 ```
 
 ## Getting started
@@ -59,8 +61,8 @@ Or via FastAPI's dev runner:
 uv run fastapi dev src/incident_api/main.py
 ```
 
-The app serves under the root path **`/api/v1`** at `http://127.0.0.1:8000`.
-Interactive docs: `http://127.0.0.1:8000/api/v1/docs`.
+The app serves at `http://127.0.0.1:8000` with interactive docs at
+`http://127.0.0.1:8000/docs`.
 
 On startup the app creates the SQLite tables (`incident_report.db`) and, if the
 `incident` table is empty, seeds it from the mock data in `data.py`.
@@ -82,6 +84,12 @@ and every related row carries an `incident_id` foreign key back to
 The `Category` and `Tag` value models are stored in JSON columns through the
 `CategoryList` / `TagList` `TypeDecorator`s.
 
+Request models (Pydantic, not tables):
+
+- `IncidentCreate` — `title`, `text`, `location` (required); `categories`,
+  `tags`, `occurred_at` (optional).
+- `IncidentUpdate` — `title`, `text` (both required).
+
 Enums (`enums.py`):
 
 - `Status`: `pending`, `in progress`, `resolved`, `duplicate`, `closed`, `rejected`
@@ -89,7 +97,8 @@ Enums (`enums.py`):
 
 ## API endpoints
 
-Base path: `/api/v1`
+Routes are served at the application root (no path prefix is currently applied —
+see the note below).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -101,8 +110,15 @@ Base path: `/api/v1`
 | GET | `/incident-tags` | List incident tags |
 | GET | `/submission-data` | List submission metadata |
 | POST | `/incidents/create` | Create an incident (plus its location, categories, tags, and submission metadata) |
-| PUT | `/incidents/update/{incident_id}` | Partially update an incident's mutable fields |
-| DELETE | `/incidents/{incident_id}` | Delete an incident and its related records |
+| PUT | `/incidents/update/{incident_id}` | Update an incident's `title` and `text` |
+| DELETE | `/incidents/{incident_id}` | Delete an incident and its related records (still in-memory) |
+
+The collection endpoints (`/incidents`, `/categories`, `/locations`,
+`/incident-tags`, `/submission-data`) wrap their results in a `data` key:
+
+```json
+{ "data": [ { "...": "..." } ] }
+```
 
 ### `GET /incidents/{incident_id}`
 
@@ -110,74 +126,76 @@ Returns the incident together with the related records joined on `incident_id`:
 
 ```json
 {
-  "incident": { "id": 1, "title": "Power Outage in Sector V", "...": "..." },
-  "location": { "id": 12, "incident_id": 1, "display_name": "Sector V, Salt Lake, Kolkata", "...": "..." },
-  "categories": { "id": 3, "incident_id": 1, "categories": [{ "name": "Utility / Infrastructure", "slug": "utility-infrastructure" }] },
-  "incident_tags": { "id": 34, "incident_id": 1, "tags": [{ "name": "Power Outage", "tag": "power-outage" }] },
-  "metadata": { "id": 101, "incident_id": 1, "source": "mobile_app", "...": "..." }
+  "incident": { "id": "362983e5-36c4-5e04-a543-9620d490b651", "title": "Power Outage in Sector V", "...": "..." },
+  "category": { "id": "77e216c2-...", "incident_id": "362983e5-...", "categories": [{ "name": "Utility / Infrastructure", "slug": "utility-infrastructure" }] },
+  "location": { "id": "c2ff83c9-...", "incident_id": "362983e5-...", "display_name": "Sector V, Salt Lake, Kolkata", "...": "..." },
+  "tags": { "id": "33e36f89-...", "incident_id": "362983e5-...", "tags": [{ "name": "Power Outage", "tag": "power-outage" }] },
+  "metadata": { "id": "314f5370-...", "incident_id": "362983e5-...", "source": "mobile_app", "...": "..." }
 }
 ```
 
+Returns `404 Not Found` if no incident matches `incident_id`.
+
 ### `POST /incidents/create`
 
-Request body (JSON object). `tags` and `categories` are comma-separated strings.
+Request body (`IncidentCreate`). `title`, `text`, and `location` are required;
+`tags` and `categories` are comma-separated strings; `occurred_at` is an
+ISO&nbsp;8601 datetime.
 
 ```json
 {
-  "location": "Behala, Kolkata",
-  "tags": "Theft,Fraud,Assault",
-  "categories": "Crime,Robbery",
   "title": "Theft in Broad Daylight",
-  "text": "On October 11, 2026, a bold daytime robbery occurred ...",
-  "occurred_at": "October 11, 2026"
+  "text": "A bold daytime robbery occurred near the market.",
+  "location": "Park Street, Kolkata",
+  "categories": "Crime, Robbery",
+  "tags": "Theft, Fraud, Assault",
+  "occurred_at": "2026-10-11T14:30:00Z"
 }
 ```
 
 Behavior:
 
-- A random id (`100`–`1000`) is generated for the incident and each related record.
+- A UUID (`uuid4`) is generated for the incident and each related record.
 - `location` is geocoded via Nominatim; `latitude`/`longitude` are set from the
-  result and `geocode_status` is `"success"` or `"failed"` (on a failed or empty
-  lookup the coordinates are `null`).
-- `categories` and `tags` are split on `,` and expanded into `{name, slug}` /
-  `{name, tag}` rows.
+  result and `geocode_status` is `"success"` or `"failed"` (a failed or empty
+  lookup leaves the coordinates `null`).
+- `categories` and `tags` are split on `,`, trimmed, and expanded into
+  `{name, slug}` / `{name, tag}` rows.
 - `status` defaults to `"pending"` and `duplicate_of_id` to `null`.
+- `metadata.source` is taken from the request `User-Agent` header and
+  `metadata.request_id` is a fresh UUID.
+- The record is committed to the database before the response is returned.
 
 Response:
 
 ```json
 {
   "incident": { "...": "..." },
+  "category": { "...": "..." },
   "location": { "...": "..." },
-  "categories": { "...": "..." },
-  "incident_tags": { "...": "..." },
+  "tags": { "...": "..." },
   "metadata": { "...": "..." }
 }
 ```
 
 ### `PUT /incidents/update/{incident_id}`
 
-Partially updates an incident. Only the keys present in the body are applied, so
-it behaves like a partial update.
-
-The following fields are **immutable** and cannot be changed after creation:
-`category`, `categories`, `tags`, `location`.
+Updates an incident's `title` and `sanitized_text`, keyed by `incident_id`.
+Both fields are required (`IncidentUpdate`).
 
 Status codes:
 
 | Code | When |
 | --- | --- |
-| `200 OK` | Only mutable fields were sent; all applied |
-| `207 Multi-Status` | Mutable **and** immutable fields were sent; mutable fields applied, immutable ones discarded (listed in `ignored_fields`) |
-| `400 Bad Request` | Empty body, or body contained only immutable fields (nothing to update) |
+| `200 OK` | The incident was updated |
 | `404 Not Found` | No incident with that `incident_id` |
 
-Request body — only include what you want to change:
+Request body:
 
 ```json
 {
   "title": "Theft in Broad Daylight (updated)",
-  "status": "needs review"
+  "text": "Updated description of the incident."
 }
 ```
 
@@ -185,17 +203,11 @@ Response:
 
 ```json
 {
-  "new_incident": { "id": 2, "title": "Theft in Broad Daylight (updated)", "status": "needs review", "...": "..." },
-  "ignored_fields": []
-}
-```
-
-When immutable fields are discarded, `ignored_fields` lists them:
-
-```json
-{
-  "new_incident": { "...": "..." },
-  "ignored_fields": ["category", "location"]
+  "incident": { "...": "..." },
+  "category": { "...": "..." },
+  "location": { "...": "..." },
+  "tags": { "...": "..." },
+  "metadata": { "...": "..." }
 }
 ```
 
@@ -207,15 +219,23 @@ submission metadata.
 - `204 No Content` — the incident was deleted.
 - `404 Not Found` — no incident with that `incident_id`.
 
+> Not yet migrated: this handler still reads/writes the in-memory mock stores in
+> `data.py`.
+
 ## Notes & limitations
 
-- **In-memory serving.** Request handlers still operate on the module-level lists
-  in `data.py`; created records are appended and updates mutate in place,
-  persisting only for the lifetime of the process. Restarting the server (or
-  `--reload`) resets the in-memory data.
-- **SQLite layer.** `models.py` defines the SQLModel schema and `seed.py` writes
-  the mock data into `incident_report.db` on startup. The handlers are not yet
-  reading from this database — migrating them is pending.
-- `created_at` / `received_at` use `datetime.now(...)` timestamps.
+- **Database-backed handlers.** The list, get-one, create, and update handlers
+  all use the SQLite database through the `SessionDep` dependency; data persists
+  across restarts.
+- **Seeding.** `seed.py` runs on startup and inserts the mock data from `data.py`
+  only when the `incident` table is empty.
+- **`DELETE` still in-memory.** The delete handler operates on the module-level
+  lists in `data.py`, so it does not affect the persisted rows — migration is
+  pending.
+- **No path prefix.** `main.py` constructs `FastAPI(root="/api/v1")`, but FastAPI
+  has no `root` parameter (`root_path` exists but does not prefix routes), so it
+  is ignored and routes are served from `/`. A versioned prefix (e.g. `/api/v1`,
+  `/api/v2`) is not yet wired up.
+- `created_at` / `received_at` use UTC-aware `datetime.now(timezone.utc)`.
 - Geocoding makes a live network call to Nominatim per create request; failures
   are swallowed and recorded as `geocode_status: "failed"`.
