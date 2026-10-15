@@ -1,26 +1,10 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
-from random import randint
-from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request
 from sqlmodel import Session, select
 
 from incident_api import SessionDep, create_db_and_tables, engine
-from incident_api.data import (
-    IMMUTABLE,
-    get_mock_categories,
-    get_mock_incident_tags,
-    get_mock_incidents,
-    get_mock_locations,
-    get_mock_submission_metadata,
-    set_mock_categories,
-    set_mock_incident_tags,
-    set_mock_incidents,
-    set_mock_locations,
-    set_mock_metadata,
-)
 from incident_api.models import (
     Categories,
     Incident,
@@ -35,12 +19,7 @@ from incident_api.response_model import (
     Response,
 )
 from incident_api.seed import seed
-from incident_api.utils import (
-    build_location,
-    create_category,
-    create_tags,
-    delete_fields,
-)
+from incident_api.utils import build_location, create_category, create_tags
 
 
 @asynccontextmanager
@@ -176,9 +155,7 @@ async def create_incident(body: IncidentCreate, request: Request, session: Sessi
     "/incidents/update/{incident_id}",
     response_model=IncidentResponse[Incident, Categories, Location, Tags, Metadata],
 )
-async def update_incident(
-    incident_id: UUID, body: IncidentUpdate, session: SessionDep
-):
+async def update_incident(incident_id: UUID, body: IncidentUpdate, session: SessionDep):
     incident = session.get(Incident, incident_id)
 
     if incident is None:
@@ -206,8 +183,8 @@ async def update_incident(
     }
 
 
-@app.delete("/incidents/{incident_id}",status_code=204)
-async def delete_incident(incident_id: UUID,session:SessionDep):
+@app.delete("/incidents/{incident_id}", status_code=204)
+async def delete_incident(incident_id: UUID, session: SessionDep):
     incident = session.get(Incident, incident_id)
 
     if incident is None:
