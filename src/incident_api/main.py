@@ -5,7 +5,6 @@ from fastapi import FastAPI, HTTPException, Request
 from sqlmodel import Session, select
 
 from incident_api import SessionDep, create_db_and_tables, engine
-from incident_api.enums import Status
 from incident_api.models import (
     Categories,
     Incident,
@@ -38,7 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(root="/api/v1", lifespan=lifespan)
+app = FastAPI(root_path="/api/v1", lifespan=lifespan)
 
 
 @app.get("/")

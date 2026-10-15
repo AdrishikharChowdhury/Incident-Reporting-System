@@ -1,15 +1,13 @@
 # Incident Reporting API
 
-A small FastAPI service for reporting, retrieving, updating, and deleting civic
-incidents (power outages, water leaks, theft, etc.). Data is stored in a local
-SQLite database through SQLModel; on first startup the tables are created and
-seeded from the mock data in `data.py`. Reported locations are geocoded with
-Nominatim.
+A small FastAPI service for reporting, retrieving, updating (including status),
+and deleting civic incidents (power outages, water leaks, theft, etc.). Data is
+stored in a local SQLite database through SQLModel; on first startup the tables
+are created and seeded from the mock data in `data.py`. Reported locations are
+geocoded with Nominatim.
 
-> **Status:** SQLite-backed. All read and write handlers (list, get-one, create,
-> update) now query and mutate the database through SQLModel. The `DELETE`
-> handler still operates on the module-level mock stores in `data.py`; migrating
-> it is pending.
+> **Status:** SQLite-backed. All handlers — list, get-one, create, update,
+> status-update, delete — query and mutate the database through SQLModel.
 
 ## Tech stack
 
@@ -34,9 +32,9 @@ incident-api/
         ├── models.py         # SQLModel tables + Category/Tag models + request models + JSON TypeDecorators
         ├── enums.py          # `Status` and `GeocodeStatus` enums
         ├── response_model.py # generic `Response` / `IncidentResponse` response models
-        ├── data.py           # in-memory mock stores (seed source) + get/set helpers
+        ├── data.py           # mock data used to seed the database on startup
         ├── seed.py           # writes the mock data into the database on startup
-        └── utils.py          # geocoding + category/tag builders
+        └── utils.py          # geocoding, category/tag builders, status mapping
 ```
 
 ## Getting started
@@ -89,6 +87,7 @@ Request models (Pydantic, not tables):
 - `IncidentCreate` — `title`, `text`, `location` (required); `categories`,
   `tags`, `occurred_at` (optional).
 - `IncidentUpdate` — `title`, `text` (both required).
+- `StatusUpdate` — `status` (one of the `Status` enum values).
 
 Enums (`enums.py`):
 
@@ -111,7 +110,8 @@ see the note below).
 | GET | `/submission-data` | List submission metadata |
 | POST | `/incidents/create` | Create an incident (plus its location, categories, tags, and submission metadata) |
 | PUT | `/incidents/update/{incident_id}` | Update an incident's `title` and `text` |
-| DELETE | `/incidents/{incident_id}` | Delete an incident and its related records (still in-memory) |
+| PUT | `/incidents/status/{incident_id}` | Update an incident's `status` (returns `202 Accepted`) |
+| DELETE | `/incidents/{incident_id}` | Delete an incident and its related records |
 
 The collection endpoints (`/incidents`, `/categories`, `/locations`,
 `/incident-tags`, `/submission-data`) wrap their results in a `data` key:
@@ -211,27 +211,57 @@ Response:
 }
 ```
 
+### `PUT /incidents/status/{incident_id}`
+
+Updates only the incident's `status`. The request body (`StatusUpdate`) must
+carry one of the `Status` enum values.
+
+Status codes:
+
+| Code | When |
+| --- | --- |
+| `202 Accepted` | The status was updated |
+| `404 Not Found` | No incident with that `incident_id` |
+| `422 Unprocessable Entity` | `status` is not a valid `Status` value |
+
+Request body:
+
+```json
+{ "status": "resolved" }
+```
+
+Response:
+
+```json
+{
+  "data": { "id": "058482e7-ad34-41d5-8e1c-91659e453f07", "status": "resolved", "...": "..." }
+}
+```
+
 ### `DELETE /incidents/{incident_id}`
 
-Removes the incident together with its related location, categories, tags, and
-submission metadata.
+Deletes the incident and its related `categories`, `location`, `tags`, and
+`metadata` rows, looked up by `incident_id` and removed in the same transaction.
 
-- `204 No Content` — the incident was deleted.
+- `204 No Content` — the incident and its related rows were deleted.
 - `404 Not Found` — no incident with that `incident_id`.
 
-> Not yet migrated: this handler still reads/writes the in-memory mock stores in
-> `data.py`.
+> Deletion uses explicit `session.delete(...)` calls, **not** a database-level
+> `ON DELETE CASCADE` (no ORM relationships are defined). Other incidents that
+> reference this one through `duplicate_of_id` are left untouched.
 
 ## Notes & limitations
 
-- **Database-backed handlers.** The list, get-one, create, and update handlers
-  all use the SQLite database through the `SessionDep` dependency; data persists
-  across restarts.
+- **Database-backed handlers.** Every handler (list, get-one, create, update,
+  status-update, and delete) uses the SQLite database through the `SessionDep`
+  dependency; data persists across restarts.
 - **Seeding.** `seed.py` runs on startup and inserts the mock data from `data.py`
   only when the `incident` table is empty.
-- **`DELETE` still in-memory.** The delete handler operates on the module-level
-  lists in `data.py`, so it does not affect the persisted rows — migration is
-  pending.
+- **UUID storage.** SQLite has no native UUID type, so the `Uuid` primary and
+  foreign key columns are stored as `CHAR(32)` hex strings without dashes in
+  `incident_report.db`. The API returns and accepts the canonical dashed form
+  (`8-4-4-4-12`); Swagger UI requires the dashed form, while FastAPI and curl
+  accept either.
 - **No path prefix.** `main.py` constructs `FastAPI(root="/api/v1")`, but FastAPI
   has no `root` parameter (`root_path` exists but does not prefix routes), so it
   is ignored and routes are served from `/`. A versioned prefix (e.g. `/api/v1`,
