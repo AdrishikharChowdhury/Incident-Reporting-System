@@ -4,9 +4,9 @@ from random import randint
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from incident_api import create_db_and_tables, engine
+from incident_api import SessionDep, create_db_and_tables, engine
 from incident_api.data import (
     IMMUTABLE,
     get_mock_categories,
@@ -20,6 +20,8 @@ from incident_api.data import (
     set_mock_locations,
     set_mock_metadata,
 )
+from incident_api.models import Categories, Incident, Location, Metadata, Tags
+from incident_api.response_model import CategoriesResponse, IncidentsResponse, LocationsResponse, MetadataResponse, TagsResponse
 from incident_api.seed import seed
 from incident_api.utils import create_category, create_tags, delete_fields, lat_long
 
@@ -33,7 +35,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(root_path="/api/v1", lifespan=lifespan)
+app = FastAPI(root="/api/v1", lifespan=lifespan)
 
 
 @app.get("/")
@@ -41,78 +43,40 @@ async def root():
     return {"message": "Hello welcome to the incident-reporting-api"}
 
 
-@app.get("/incidents")
-async def read_incidents():
-    return {"incidents": get_mock_incidents()}
+@app.get("/incidents", response_model=IncidentsResponse)
+async def read_incidents(session: SessionDep):
+    incidents = session.exec(select(Incident)).all()
+    return {"incidents": incidents}
 
 
-@app.get("/categories")
-async def read_categories():
-    return {"categories": get_mock_categories()}
+@app.get("/categories",response_model=CategoriesResponse)
+async def read_categories(session: SessionDep):
+    categories = session.exec(select(Categories)).all()
+    return {"categories": categories}
 
 
-@app.get("/locations")
-async def read_locations():
-    return {"locations": get_mock_locations()}
+@app.get("/locations",response_model=LocationsResponse)
+async def read_locations(session: SessionDep):
+    locations = session.exec(select(Location)).all()
+    return {"locations": locations}
 
 
-@app.get("/incident-tags")
-async def read_incident_tags():
-    return {"incident-tags": get_mock_incident_tags()}
+@app.get("/incident-tags",response_model=TagsResponse)
+async def read_incident_tags(session: SessionDep):
+    incident_tags = session.exec(select(Tags)).all()
+    return {"incident_tags": incident_tags}
 
 
-@app.get("/submission-data")
-async def read_submission_data():
-    return {"submission-data": get_mock_submission_metadata()}
+@app.get("/submission-data",response_model=MetadataResponse)
+async def read_submission_data(session: SessionDep):
+    metadata = session.exec(select(Metadata)).all()
+    return {"submission-data": metadata}
 
 
 @app.get("/incidents/{incident_id}")
-async def read_a_incident(incident_id: int):
-    incidents = get_mock_incidents()
-    categories = get_mock_categories()
-    metadata = get_mock_submission_metadata()
-    locations = get_mock_locations()
-    tags = get_mock_incident_tags()
-    req_incident = None
-    req_category = None
-    req_metadatum = None
-    req_location = None
-    req_tag = None
-    for incident in incidents:
-        if incident["id"] == incident_id:
-            req_incident = incident
-
-    for category in categories:
-        if category["incident_id"] == incident_id:
-            req_category = category
-
-    for metadatum in metadata:
-        if metadatum["incident_id"] == incident_id:
-            req_metadatum = metadatum
-
-    for location in locations:
-        if location["incident_id"] == incident_id:
-            req_location = location
-
-    for tag in tags:
-        if tag["incident_id"] == incident_id:
-            req_tag = tag
-
-    if req_incident is not None and (
-        req_location is not None
-        or req_metadatum is not None
-        or req_tag is not None
-        or req_category is not None
-    ):
-        return {
-            "incident": req_incident,
-            "location": req_location,
-            "categories": req_category,
-            "incident_tags": req_tag,
-            "metadata": req_metadatum,
-        }
-
-    raise HTTPException(status_code=404)
+async def read_a_incident(incident_id: int, session: SessionDep):
+    # incident=session.exec(select(Incident))
+    pass
 
 
 @app.post("/incidents/create")
