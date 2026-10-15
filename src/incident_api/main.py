@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from random import randint
 from typing import Any
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from sqlmodel import Session, select
@@ -21,7 +22,14 @@ from incident_api.data import (
     set_mock_metadata,
 )
 from incident_api.models import Categories, Incident, Location, Metadata, Tags
-from incident_api.response_model import CategoriesResponse, IncidentsResponse, LocationsResponse, MetadataResponse, TagsResponse
+from incident_api.response_model import (
+    CategoriesResponse,
+    IncidentResponse,
+    IncidentsResponse,
+    LocationsResponse,
+    MetadataResponse,
+    TagsResponse,
+)
 from incident_api.seed import seed
 from incident_api.utils import create_category, create_tags, delete_fields, lat_long
 
@@ -49,34 +57,50 @@ async def read_incidents(session: SessionDep):
     return {"incidents": incidents}
 
 
-@app.get("/categories",response_model=CategoriesResponse)
+@app.get("/categories", response_model=CategoriesResponse)
 async def read_categories(session: SessionDep):
     categories = session.exec(select(Categories)).all()
     return {"categories": categories}
 
 
-@app.get("/locations",response_model=LocationsResponse)
+@app.get("/locations", response_model=LocationsResponse)
 async def read_locations(session: SessionDep):
     locations = session.exec(select(Location)).all()
     return {"locations": locations}
 
 
-@app.get("/incident-tags",response_model=TagsResponse)
+@app.get("/incident-tags", response_model=TagsResponse)
 async def read_incident_tags(session: SessionDep):
     incident_tags = session.exec(select(Tags)).all()
     return {"incident_tags": incident_tags}
 
 
-@app.get("/submission-data",response_model=MetadataResponse)
+@app.get("/submission-data", response_model=MetadataResponse)
 async def read_submission_data(session: SessionDep):
     metadata = session.exec(select(Metadata)).all()
     return {"submission-data": metadata}
 
 
-@app.get("/incidents/{incident_id}")
-async def read_a_incident(incident_id: int, session: SessionDep):
-    # incident=session.exec(select(Incident))
-    pass
+@app.get("/incidents/{incident_id}",response_model=IncidentResponse)
+async def read_a_incident(incident_id: UUID, session: SessionDep):
+    incident = session.get(Incident, incident_id)
+
+    if not incident:
+        raise HTTPException(status_code=404)
+
+    category = session.get(Categories, incident.categories_id)
+    location = session.get(Location, incident.location_id)
+    tags = session.exec(select(Tags).where(Tags.incident_id == incident.id)).first()
+    metadata = session.exec(
+        select(Metadata).where(Metadata.incident_id == incident.id)
+    ).first()
+    return {
+        "incident": incident,
+        "category": category,
+        "location": location,
+        "tags": tags,
+        "metadata": metadata,
+    }
 
 
 @app.post("/incidents/create")

@@ -21,3 +21,11 @@ class TagsResponse(BaseModel):
 
 class MetadataResponse(BaseModel):
     metadata: list[Metadata]
+
+
+class IncidentResponse(BaseModel):
+    incident: Incident
+    category: Categories
+    location: Location
+    tags: Tags
+    metadata: Metadata
